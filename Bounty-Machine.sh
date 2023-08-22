@@ -170,7 +170,11 @@ xargs -a aliveSubs -I@ bash -c 'python3 ~/Tools/ParamSpider/paramspider.py -d @ 
 
 echo "[+]-------------------Join All Endpoints-------------------[+]"
 
-cat waybackurls gau gauplus hakrawler katana arjun1 arjun2 paramspider | uro | grep -E '^(?=.*[?&])\S+$' | tee endpoints
+cat waybackurls gau gauplus hakrawler katana arjun1 arjun2 paramspider | uro | grep -E '^[^:/?&]+://[^/]+/[^?]+\?[^ ]*=' | tee endpointsClean
+
+cat waybackurls gau gauplus hakrawler katana arjun1 arjun2 paramspider | uro | grep -E 'https?://[^/]+/[^?]+\?[^ ]*=' | tee endpointsHttp
+
+cat endpoints endpointsHttp | uro | anew endpoints
 
 ##################################
 #                                #
@@ -181,6 +185,10 @@ cat waybackurls gau gauplus hakrawler katana arjun1 arjun2 paramspider | uro | g
 echo "[+]-------------------Validate Endpoints-------------------[+]"
 
 cat endpoints | httpx -silent | anew aliveEndpoints
+
+echo "[+]-------------------Removing Files-------------------[+]"
+
+rm -rf waybackurls gau gauplus hakrawler katana arjun1 arjun2 paramspider
 
 #######################
 #                     #
@@ -193,8 +201,7 @@ echo "[+]-------------------Enum JS Module-------------------[+]"
 echo "[+]-------------------Cache JS Module-------------------[+]"
 
 cat aliveSubs | gau -subs | grep -iE '\.js'| grep -iEv '(\.jsp|\.json)' | tee gau
-cat aliveSubs | waybackurls | grep -E '\.json(?:onp?)?$' | anew waybackurls1
-cat aliveSubs | waybackurls | grep -iE '\.js'| grep -iEv '(\.jsp)' | tee waybackurls2
+cat aliveSubs | waybackurls | grep -E '\.js(?:onp?)?$' | anew waybackurls
 
 echo "[+]-------------------Crawler JS Module-------------------[+]"
 
@@ -216,7 +223,7 @@ cat aliveSubs | xargs -I@ sh -c 'python3 ~/Tools/dirsearch/dirsearch.py -r -b -w
 
 echo "[+]-------------------Join All-------------------[+]"
 
-cat getJS katana gau waybackurls1 waybackurls2 gospider hakrawler1 hakrawler2 dirsearch | anew allJS
+cat getJS katana gau waybackurls gospider hakrawler1 hakrawler2 dirsearch | anew allJS
 
 ####################
 #                  #
@@ -226,7 +233,7 @@ cat getJS katana gau waybackurls1 waybackurls2 gospider hakrawler1 hakrawler2 di
 
 echo "[+]-------------------Just JS-------------------[+]"
 
-cat getJS katana gau waybackurls1 waybackurls2 gospider hakrawler1 hakrawler2 dirsearch | grep -E '\.js(?:onp?)?$' | sort -u | tee justJS
+cat getJS katana gau waybackurls gospider hakrawler1 hakrawler2 dirsearch | grep -E '\.js$' | sort -u | tee justJS
 
 ######################################
 #                                    #
@@ -248,7 +255,7 @@ cat justJS | anti-burl | anew aliveJustJS
 
 echo "[+]-------------------Removing Files-------------------[+]"
 
-rm -rf getJS katana gau waybackurls1 waybackurls2 gospider hakrawler1 hakrawler2 dirsearch
+rm -rf getJS katana gau waybackurls gospider hakrawler1 hakrawler2 dirsearch
 
 ##################
 #                #
@@ -266,7 +273,8 @@ echo "[+]-------------------Start JS Analysis-------------------[+]"
 
 echo "[+]-------------------LinkFinder, Collector and Secret Finder-------------------[+]"
 
-xargs -a aliveJustJS -n 2 -I@ bash -c "echo -e '\n[URL]: @\n'; python3 ~/Tools/linkfinder.py -i @ -o cli"; cat aliveJustJS | python3 ~/Tools/collector.py outputS; rush -i output/urls.txt 'python3 ~/Tools/SecretFinder.py -i {} -o cli | sort -u >> output/resultJSPASS'
+cat aliveJustJS | xargs -I @ bash -c "python3 ~/Tools/linkfinder.py -i @ -o cli" | python3 ~/Tools/collector.py output
+rush -i output/urls.txt 'python3 ~/Tools/SecretFinder.py -i {} -o cli | sort -u >> output/resultJSPASS'
 
 echo 'USE JSSCANER https://github.com/0x240x23elu/JSScanner' | notify
 
@@ -278,8 +286,10 @@ echo 'USE JSSCANER https://github.com/0x240x23elu/JSScanner' | notify
 
 echo "[+]-------------------Extract Urls-------------------[+]"
 
-xargs -a aliveJustJS -n 2 -I@ bash -c "echo -e '\n[URL]: @\n; python3 ~/Tools/LinkFinder/linkfinder.py -i @ -o cli" | tee saida; cat saida | grep -o 'https\?://[^/]*' | tee linkfinder
-python3 ~/my-scripts/urlJSFinder.py aliveJustJS
+xargs -a aliveJustJS -n 2 -I@ bash -c "python3 ~/Tools/LinkFinder/linkfinder.py -i @ -o cli" | tee saida; cat saida | grep -o 'https\?://[^/]*' | tee linkfinder
+
+# PRIVATE SCRIPT FOR JS ANALYSIS (NEED TO FINISH)
+# python3 ~/my-scripts/urlJSFinder.py aliveJustJS
 
 #############################
 #                           #
@@ -289,7 +299,7 @@ python3 ~/my-scripts/urlJSFinder.py aliveJustJS
 
 echo "[+]-------------------Join All-------------------[+]"
 
-cat urlJS.txt linkfinder | anew jsUrls
+cat linkfinder | anew jsUrls
 
 ##################################################
 #                                                #
@@ -299,7 +309,7 @@ cat urlJS.txt linkfinder | anew jsUrls
 
 echo "[+]-------------------Diff With The Old Subs-------------------[+]"
 
-diff --new-line-format="" --unchanged-line-format="" allSubs jsUrls | tee allJsUrls
+comm -23 <(sort allSubs) <(sort jsUrls) > allJsUrls
 
 ##############
 #            #
@@ -349,8 +359,8 @@ cat aliveNewSubs | nuclei -tags swagger -t ~/nuclei-templates -o swaggerNewSubs 
 echo "[+]-------------------Starting Cache Module-------------------[+]"
 
 cat aliveNewSubs | waybackurls | uro | tee waybackurlsNewSubs
-cat aliveNewSubs | gau --blacklist md,jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,pdf,php,js | uro | tee gauNewSubs
-cat aliveNewSubs | gauplus -b md,jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,pdf,php,js -random-agent | uro | tee gauplusNewSubs
+cat aliveNewSubs | gau --blacklist md,jpg,jpeg,gif,css,tif,tiff,png,ttf,txt,woff,woff2,ico,pdf,php,js | uro | tee gauNewSubs
+cat aliveNewSubs | gauplus -b md,jpg,jpeg,gif,css,tif,tiff,png,ttf,txt,woff,woff2,ico,pdf,php,js -random-agent | uro | tee gauplusNewSubs
 
 echo "[+]-------------------Starting Crawler Module-------------------[+]"
 
@@ -358,7 +368,7 @@ cat aliveNewSubs | hakrawler | uro | tee hakrawlerNewSubs
 katana -list aliveNewSubs -d 15 -silent -f qurl | uro | tee katanaNewSubs
 arjun -i aliveNewSubs -oT arjun1NewSubs
 arjun -i aliveNewSubs -m POST -oT arjun2NewSubs
-xargs -a aliveNewSubs -I@ bash -c 'python3 ~/Tools/ParamSpider -d @ --level high -e md,jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,pdf,php,js' | uro | tee paramspiderNewSubs
+xargs -a aliveNewSubs -I@ bash -c 'python3 ~/Tools/ParamSpider/paramspider.py -d @ --level high -e md,jpg,jpeg,gif,css,tif,tiff,png,ttf,woff,woff2,ico,pdf,php,js,txt' | uro | tee paramspiderNewSubs
 
 #############################
 #                           #
@@ -368,7 +378,11 @@ xargs -a aliveNewSubs -I@ bash -c 'python3 ~/Tools/ParamSpider -d @ --level high
 
 echo "[+]-------------------Join All Endpoints-------------------[+]"
 
-cat waybackurlsNewSubs gauNewSubs gauplusNewSubs hakrawlerNewSubs katanaNewSubs arjun1NewSubs arjun2NewSubs paramspiderNewSubs | uro | grep -E '^(?=.*[?&])\S+$' | tee endpointsNewSubs
+cat waybackurlsNewSubs gauNewSubs gauplusNewSubs hakrawlerNewSubs katanaNewSubs arjun1NewSubs arjun2NewSubs paramspiderNewSubs | uro | grep -E '^[^:/?&]+://[^/]+/[^?]+\?[^ ]*=' | tee newEndpointsClean
+
+cat waybackurlsNewSubs gauNewSubs gauplusNewSubs hakrawlerNewSubs katanaNewSubs arjun1NewSubs arjun2NewSubs paramspiderNewSubs | uro | grep -E 'https?://[^/]+/[^?]+\?[^ ]*=' | tee newEndpointsHttp
+
+cat newEndpointsClean newEndpointsHttp | uro | anew newEndpoints
 
 ##################################
 #                                #
@@ -378,12 +392,9 @@ cat waybackurlsNewSubs gauNewSubs gauplusNewSubs hakrawlerNewSubs katanaNewSubs 
 
 echo "[+]-------------------Validate Endpoints-------------------[+]"
 
-cat endpointsNewSubs | httpx -silent | anew aliveNewEndpoints
+cat newEndpoints | httpx -silent | anew aliveNewEndpoints
 
 echo "[+]-------------------Extract Endpoints on JS File-------------------[+]"
-
-# ADICIONAR
-#xargs -a teste -I@ bash -c 'curl -s @ | grep -Eo "(http|https)://[a-zA-Z0-9./?=_-]*" | grep = | grep vulnweb | sort -u'
 
 ####################
 #                  #
@@ -468,3 +479,6 @@ rm -rf sstiEndpoints
 #curl -s "https://crt.sh/?q=%25.%25.$url&output=json" | jq -r '.[].name_value' | sed 's/\*\.//g' | tee certsh2
 #curl -s "https://crt.sh/?q=%25.%25.%25.$url&output=json" | jq -r '.[].name_value' | sed 's/\*\.//g' | tee certsh3
 #curl -s "https://crt.sh/?q=%25.%25.%25.%25.$url&output=json" | jq -r '.[].name_value' | sed 's/\*\.//g' | tee certsh4
+
+# ADICIONAR
+#xargs -a teste -I@ bash -c 'curl -s @ | grep -Eo "(http|https)://[a-zA-Z0-9./?=_-]*" | grep = | grep vulnweb | sort -u'
